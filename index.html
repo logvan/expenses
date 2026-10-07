@@ -560,10 +560,10 @@ async function call(action, payload) {
     // text/plain — «простой» запрос без предварительной проверки CORS, Apps Script принимает его как есть
     res = await fetch(API_URL, {method: 'POST', redirect: 'follow', headers: {'Content-Type': 'text/plain;charset=utf-8'}, body: JSON.stringify(body)});
   } catch (e) {
-    throw new Error('Нет связи с сервером. Проверь интернет.');
+    throw new Error('Нет связи с сервером (' + (e && e.message || e) + '). Проверь интернет и адрес скрипта.');
   }
-  let j;
-  try { j = await res.json(); } catch (e) { throw new Error('Сервер ответил не так. Проверь адрес скрипта и версию развёртывания.'); }
+  let j, raw = '';
+  try { raw = await res.text(); j = JSON.parse(raw); } catch (e) { throw new Error('Сервер ответил не так (HTTP ' + res.status + '): ' + raw.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 140) + ' — проверь адрес скрипта и новую версию развёртывания.'); }
   if (!j.ok) throw new Error(j.error === 'auth' ? 'Нет доступа. Открой приложение кнопкой в чате с ботом.' : (j.error || 'Ошибка сервера'));
   return j.data;
 }
@@ -652,6 +652,17 @@ function readCache() {
 }
 function writeCache(d) { if (REAL) { try { localStorage.setItem(cacheKey(), JSON.stringify(d)); } catch (e) {} } }
 
+function showLoadError(msg) {
+  let b = document.getElementById('loadErr');
+  if (!b) {
+    b = document.createElement('div'); b.id = 'loadErr';
+    b.style.cssText = 'margin:16px;padding:14px 16px;border-radius:16px;background:#3a1d22;color:#ffd9de;font-size:14px;line-height:1.4;word-break:break-word';
+    const app = document.getElementById('app'); app.insertBefore(b, app.firstChild);
+  }
+  b.innerHTML = '<b>Не удалось загрузить данные</b><br>' + String(msg).replace(/</g, '&lt;') +
+    '<br><br><span style="opacity:.7">build 3 · ' + (TG && TG.initData ? 'telegram' : 'без telegram') + '</span><br><br>' +
+    '<button onclick="document.getElementById(\'loadErr\').remove();load()" style="padding:8px 14px;border-radius:10px;border:0;background:#fff2;color:inherit;font-size:14px">Повторить</button>';
+}
 let loadSeq = 0;
 async function load() {
   const my = ++loadSeq;
@@ -672,7 +683,10 @@ async function load() {
     writeCache(fresh);
     render();
   } catch (e) {
-    if (my === loadSeq) toast(cached ? 'Показаны сохранённые данные: ' + e.message : (e.message || 'Не удалось загрузить данные'), true);
+    if (my === loadSeq) {
+      toast(cached ? 'Показаны сохранённые данные: ' + e.message : (e.message || 'Не удалось загрузить данные'), true);
+      if (!cached) showLoadError(e.message || String(e));
+    }
   } finally {
     if (my === loadSeq) setLoading(false);
   }
